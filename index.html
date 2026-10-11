@@ -1,0 +1,219 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <title>ShadowBrowser</title>
+  <link id="tab-icon" rel="icon" href="data:,">
+  <style>
+    *{box-sizing:border-box}html,body{margin:0;height:100%;background:#09090b;color:#fafafa;font:14px/1.6 system-ui,sans-serif}
+    #frame{position:fixed;inset:0;width:100%;height:100%;border:0;background:#09090b}
+    [hidden]{display:none!important}.center{position:fixed;inset:0;display:flex;flex-direction:column;justify-content:center;align-items:center;padding:24px;text-align:center}
+    h1{font-size:21px;letter-spacing:.1em}p{color:#a1a1aa;max-width:540px}button,input,select,textarea{font:inherit;border-radius:7px;padding:8px 12px}
+    button{cursor:pointer;border:1px solid #3f3f46;background:#202024;color:white}button:hover{background:#303039}input,textarea,select{width:100%;color:white;background:#111115;border:1px solid #52525b}
+    textarea{height:95px}label{display:block;margin:16px 0 6px}.bar{width:130px;height:3px;background:#27272a;overflow:hidden}.bar i{display:block;width:40%;height:100%;background:#a5b4fc;animation:slide 1s infinite}
+    @keyframes slide{from{transform:translateX(-100%)}to{transform:translateX(350%)}}pre{white-space:pre-wrap;overflow-wrap:anywhere;color:#a1a1aa;max-width:650px;text-align:left}
+    #settings-button{position:fixed;right:10px;bottom:10px;z-index:30;opacity:.8}#settings{z-index:40;background:#09090bf5;text-align:left;overflow:auto}#settings form{width:min(580px,100%)}
+    #notice{position:fixed;top:0;left:0;right:0;background:#312a18;color:#ffe6a0;text-align:center;z-index:25;padding:7px}#notice button{padding:0 8px;margin-left:12px}
+    #settings-error{color:#fca5a5}.buttons{display:flex;gap:10px;margin-top:18px}
+  </style>
+</head>
+<body>
+  <div id="loader" class="center"><h1>SHADOWBROWSER</h1><div class="bar"><i></i></div><p>Loading your browser interface…</p></div>
+  <div id="error" class="center" hidden><h1>Could not load the interface</h1><p>Your PC and tunnel must be running. Check the server address in Launcher settings.</p><pre id="detail"></pre><button id="retry">Retry now</button></div>
+  <iframe id="frame" title="ShadowBrowser" referrerpolicy="no-referrer" allow="fullscreen; autoplay; clipboard-read; clipboard-write" hidden></iframe>
+  <div id="notice" hidden><span></span><button id="dismiss" aria-label="Dismiss notification">×</button></div>
+  <button id="settings-button">Launcher settings</button>
+  <div id="settings" class="center" hidden>
+    <form id="settings-form">
+      <h1>Launcher settings</h1>
+      <label for="servers">ShadowBrowser server addresses, one per line</label>
+      <textarea id="servers" spellcheck="false" required></textarea>
+      <p>Use your HTTPS tunnel address. Additional addresses must reach a ShadowBrowser server with portable-launcher support. A redirect-only website is not a server mirror.</p>
+      <label for="appearance">Tab title and icon</label>
+      <select id="appearance"><option value="shadow">ShadowBrowser</option><option value="docs">Google Docs</option><option value="classroom">Google Classroom</option><option value="drive">Google Drive</option><option value="random">Random Google tab appearance</option></select>
+      <p>Tab appearance is cosmetic. The network still sees connections to your server. Cached HTML saves the interface; live browsing still requires a reachable server.</p>
+      <p id="stable-link" hidden></p>
+      <p id="settings-error" role="alert"></p>
+      <div class="buttons"><button type="submit">Save and reconnect</button><button type="button" id="cancel">Cancel</button></div>
+    </form>
+  </div>
+<script>
+const DEFAULT_SERVERS = ["https://stainless-britannica-matter-sports.trycloudflare.com"];
+const CONFIG_URLS = ["https://raw.githubusercontent.com/finniverson-oss/shadow-browser/connection/runtime.json","https://api.github.com/repos/finniverson-oss/shadow-browser/contents/runtime.json?ref=connection"];
+const SITE_URL = "https://finniverson-oss.github.io/shadow-browser/";
+const BUILTIN_HUB = "\u003c!doctype html>\n\u003chtml lang=\"en\">\n  \u003chead>\u003cmeta name=\"shadow-portable\" content=\"1\">\n    \u003cmeta charset=\"utf-8\" />\n    \u003cmeta name=\"viewport\" content=\"width=device-width, initial-scale=1\" />\n    \u003ctitle>Shadow Browser\u003c/title>\n    \u003cstyle>:root {\n  --bg: #0f1115;\n  --panel: #1a1d24;\n  --border: #2a2e37;\n  --text: #e6e8ec;\n  --muted: #9aa0ab;\n  --accent: #4c8dff;\n  --error: #ff6b6b;\n}\n\n* {\n  box-sizing: border-box;\n}\n\nhtml,\nbody {\n  margin: 0;\n  height: 100%;\n  background: var(--bg);\n  color: var(--text);\n  font: 14px/1.4 system-ui, -apple-system, Segoe UI, Roboto, sans-serif;\n}\n\nbody {\n  display: flex;\n  flex-direction: column;\n}\n\n.toolbar {\n  display: flex;\n  gap: 6px;\n  align-items: center;\n  padding: 6px 8px;\n  background: var(--panel);\n  border-bottom: 1px solid var(--border);\n  flex: 0 0 auto;\n}\n\n.nav {\n  min-width: 34px;\n  height: 34px;\n  border: 1px solid var(--border);\n  background: #22262f;\n  color: var(--text);\n  border-radius: 8px;\n  font-size: 18px;\n  cursor: pointer;\n}\n\n.nav:hover {\n  background: #2b303a;\n}\n\n.address {\n  flex: 1 1 auto;\n  height: 34px;\n  padding: 0 12px;\n  border: 1px solid var(--border);\n  border-radius: 8px;\n  background: #0c0e12;\n  color: var(--text);\n  outline: none;\n}\n\n.address:focus {\n  border-color: var(--accent);\n}\n\n.status {\n  width: 10px;\n  height: 10px;\n  border-radius: 50%;\n  background: var(--muted);\n  margin: 0 6px;\n  font-size: 0;\n}\n\n.status.on {\n  background: #37d67a;\n}\n\n.status.off {\n  background: var(--error);\n}\n\n.stage {\n  position: relative;\n  flex: 1 1 auto;\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  overflow: hidden;\n  background: #000;\n}\n\n.overlay {\n  position: absolute;\n  inset: 0;\n  display: flex;\n  flex-direction: column;\n  align-items: center;\n  justify-content: center;\n  gap: 16px;\n  background: #0b0d11;\n  color: var(--muted);\n  font-size: 14px;\n  z-index: 5;\n}\n\n.overlay[hidden] {\n  display: none;\n}\n\n.spinner {\n  width: 34px;\n  height: 34px;\n  border: 3px solid rgba(255, 255, 255, 0.12);\n  border-top-color: var(--accent);\n  border-radius: 50%;\n  animation: spin 0.8s linear infinite;\n}\n\n@keyframes spin {\n  to {\n    transform: rotate(360deg);\n  }\n}\n\n#screen {\n  display: block;\n  max-width: 100%;\n  max-height: 100%;\n  outline: none;\n  cursor: default;\n}\n\n/* login */\n.login-body {\n  align-items: center;\n  justify-content: center;\n}\n\n.login-card {\n  margin: auto;\n  width: min(360px, 90vw);\n  display: flex;\n  flex-direction: column;\n  gap: 12px;\n  padding: 28px;\n  background: var(--panel);\n  border: 1px solid var(--border);\n  border-radius: 14px;\n}\n\n.login-card h1 {\n  margin: 0;\n  font-size: 22px;\n}\n\n.login-card input {\n  height: 40px;\n  padding: 0 12px;\n  border-radius: 8px;\n  border: 1px solid var(--border);\n  background: #0c0e12;\n  color: var(--text);\n  outline: none;\n}\n\n.login-card input:focus {\n  border-color: var(--accent);\n}\n\n.login-card button {\n  height: 40px;\n  border: none;\n  border-radius: 8px;\n  background: var(--accent);\n  color: #fff;\n  font-weight: 600;\n  cursor: pointer;\n}\n\n.muted {\n  color: var(--muted);\n  margin: 0;\n}\n\n.error {\n  color: var(--error);\n  margin: 0;\n}\n\u003c/style>\n  \u003c/head>\n  \u003cbody>\n    \u003cdiv class=\"toolbar\">\n      \u003cbutton id=\"back\" title=\"Back\" class=\"nav\">‹\u003c/button>\n      \u003cbutton id=\"forward\" title=\"Forward\" class=\"nav\">›\u003c/button>\n      \u003cbutton id=\"reload\" title=\"Reload\" class=\"nav\">⟳\u003c/button>\n      \u003cinput id=\"address\" class=\"address\" placeholder=\"Search or type a URL\" spellcheck=\"false\" />\n      \u003cspan id=\"status\" class=\"status\" title=\"Connection\">…\u003c/span>\n      \u003cbutton id=\"logout\" class=\"nav\" title=\"Sign out\">⎋\u003c/button>\n    \u003c/div>\n    \u003cdiv id=\"stage\" class=\"stage\">\n      \u003ccanvas id=\"screen\" tabindex=\"0\">\u003c/canvas>\n      \u003cdiv id=\"overlay\" class=\"overlay\">\n        \u003cdiv class=\"spinner\">\u003c/div>\n        \u003cdiv id=\"overlay-text\">Connecting…\u003c/div>\n      \u003c/div>\n    \u003c/div>\n    \u003cscript>// Used only in the standalone hub. Credentials stay in memory, never in the\n// launcher cache, a URL, or browser storage.\nwindow.shadowPortable = (() => {\n  const server = new URL(window.SHADOW_SERVER || location.origin);\n  if (server.protocol !== 'https:' && !(server.protocol === 'http:' && ['localhost', '127.0.0.1', '[::1]'].includes(server.hostname))) {\n    throw new Error('Use an HTTPS server address (HTTP is allowed on localhost).');\n  }\n  const socketUrl = new URL('/portable-ws', server);\n  socketUrl.protocol = server.protocol === 'https:' ? 'wss:' : 'ws:';\n  const panel = document.createElement('div');\n  panel.className = 'overlay';\n  panel.style.cssText = 'position:fixed;z-index:20';\n  panel.innerHTML = `\u003cform class=\"login-card\" id=\"portable-form\">\n    \u003ch1>ShadowBrowser\u003c/h1>\n    \u003cp class=\"muted\">Sign in to your remote browser.\u003c/p>\n    \u003cp id=\"portable-server\" class=\"muted\" style=\"overflow-wrap:anywhere\">\u003c/p>\n    \u003cinput id=\"portable-password\" type=\"password\" autocomplete=\"current-password\" placeholder=\"Password\" aria-label=\"Password\" required>\n    \u003cbutton type=\"submit\">Sign in\u003c/button>\n    \u003cp id=\"portable-error\" class=\"error\" role=\"status\">\u003c/p>\n  \u003c/form>`;\n  document.body.append(panel);\n  panel.querySelector('#portable-server').textContent = server.origin;\n  const input = panel.querySelector('input');\n  const button = panel.querySelector('button');\n  const error = panel.querySelector('#portable-error');\n  let resume;\n  const state = {\n    url: socketUrl.href, token: null, password: null, ready: false,\n    prompt(callback, message) {\n      resume = callback;\n      panel.hidden = false;\n      button.disabled = false;\n      if (message !== undefined) error.textContent = message;\n      input.focus();\n    },\n    opened(socket) {\n      socket.send(JSON.stringify(state.token ? { t: 'auth', token: state.token } : { t: 'auth', password: state.password }));\n      state.password = null;\n    },\n    message(message) {\n      if (message.t === 'authenticated') {\n        state.token = message.token;\n        panel.hidden = true;\n        error.textContent = '';\n      } else if (message.t === 'auth-error') {\n        state.token = null;\n        state.ready = false;\n        state.prompt(resume, message.message);\n      }\n    },\n    signedOut() {\n      state.token = state.password = null;\n      state.ready = false;\n      error.textContent = '';\n    },\n    disconnected() {\n      if (!state.token && error.textContent === 'Connecting…') {\n        error.textContent = 'Could not connect. Check the server address and restart the updated ShadowBrowser server.';\n      }\n    },\n  };\n  panel.querySelector('form').addEventListener('submit', event => {\n    event.preventDefault();\n    state.password = input.value;\n    input.value = '';\n    error.textContent = 'Connecting…';\n    button.disabled = true;\n    resume();\n  });\n  return state;\n})();\n\u003c/script>\u003cscript>// Shadow Browser viewer: renders JPEG frames from the server onto a canvas and\n// forwards mouse / keyboard / navigation back over the same WebSocket.\n\nconst canvas = document.getElementById('screen');\nconst ctx = canvas.getContext('2d');\nconst stage = document.getElementById('stage');\nconst address = document.getElementById('address');\nconst statusDot = document.getElementById('status');\nconst overlay = document.getElementById('overlay');\nconst overlayText = document.getElementById('overlay-text');\n\nlet ws = null;\nlet addressFocused = false;\nlet gotFirstFrame = false;\nconst portable = window.shadowPortable;\nlet reconnectTimer = null;\n\n// ---- overlay ----\nfunction showOverlay(text) {\n  overlayText.textContent = text;\n  overlay.hidden = false;\n}\nfunction hideOverlay() {\n  overlay.hidden = true;\n}\n\n// ---- WebSocket ----\nfunction connect() {\n  clearTimeout(reconnectTimer);\n  if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) return;\n  if (portable && !portable.token && !portable.password) {\n    portable.prompt(connect);\n    return;\n  }\n  const proto = location.protocol === 'https:' ? 'wss' : 'ws';\n  ws = new WebSocket(portable ? portable.url : `${proto}://${location.host}/ws`);\n  ws.binaryType = 'arraybuffer';\n  const socket = ws;\n  const connectTimeout = setTimeout(() => {\n    if (!portable || portable.ready) return;\n    showOverlay('Connection timed out. Check the server address and restart the updated server.');\n    socket.close();\n  }, 45000);\n\n  ws.addEventListener('open', () => {\n    if (portable) {\n      portable.opened(socket);\n      return;\n    }\n    clearTimeout(connectTimeout);\n    setStatus(true);\n    // Connected, but the remote browser may still be starting up (cold start\n    // can take ~15s). Keep the overlay until the first frame arrives.\n    if (!gotFirstFrame) showOverlay('Starting your browser…');\n    sendResize();\n    canvas.focus();\n  });\n  ws.addEventListener('close', () => {\n    clearTimeout(connectTimeout);\n    if (portable) { portable.ready = false; portable.disconnected(); }\n    setStatus(false);\n    gotFirstFrame = false;\n    showOverlay('Reconnecting…');\n    reconnectOrRelogin();\n  });\n  ws.addEventListener('error', () => socket.close());\n  ws.addEventListener('message', onMessage);\n}\n\n// On disconnect, check whether our session is still valid: if it has expired,\n// send the user back to the login page instead of retrying forever.\nasync function reconnectOrRelogin() {\n  if (portable) {\n    if (!portable.token) {\n      portable.prompt(connect);\n      return;\n    }\n    reconnectTimer = setTimeout(connect, 1500);\n    return;\n  }\n  try {\n    const res = await fetch('/ping', { cache: 'no-store' });\n    if (res.status === 401) {\n      showOverlay('Session expired — redirecting to sign in…');\n      location.href = '/login';\n      return;\n    }\n  } catch {\n    // Server unreachable (down / network) — fall through and retry.\n  }\n  reconnectTimer = setTimeout(connect, 1000);\n}\n\nasync function onMessage(ev) {\n  if (typeof ev.data === 'string') {\n    let msg;\n    try {\n      msg = JSON.parse(ev.data);\n    } catch {\n      return;\n    }\n    if (portable) portable.message(msg);\n    if (msg.t === 'ready') {\n      if (portable) portable.ready = true;\n      setStatus(true);\n      if (!gotFirstFrame) showOverlay('Starting your browser…');\n      sendResize();\n      canvas.focus();\n    }\n    else if (msg.t === 'url' && !addressFocused) address.value = msg.url;\n    else if (msg.t === 'error') alert(msg.message);\n    return;\n  }\n  // Binary frame = JPEG.\n  const blob = new Blob([ev.data], { type: 'image/jpeg' });\n  try {\n    const bitmap = await createImageBitmap(blob);\n    if (canvas.width !== bitmap.width || canvas.height !== bitmap.height) {\n      canvas.width = bitmap.width;\n      canvas.height = bitmap.height;\n    }\n    ctx.drawImage(bitmap, 0, 0);\n    bitmap.close();\n    if (!gotFirstFrame) {\n      gotFirstFrame = true;\n      hideOverlay();\n    }\n  } catch {\n    /* skip a bad frame */\n  }\n}\n\nfunction send(obj) {\n  if (portable && !portable.ready) return;\n  if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(obj));\n}\n\nfunction setStatus(on) {\n  statusDot.classList.toggle('on', on);\n  statusDot.classList.toggle('off', !on);\n}\n\n// ---- sizing ----\nlet resizeTimer = null;\nfunction sendResize() {\n  const w = Math.max(320, Math.round(stage.clientWidth));\n  const h = Math.max(240, Math.round(stage.clientHeight));\n  send({ t: 'resize', width: w, height: h });\n}\nnew ResizeObserver(() => {\n  clearTimeout(resizeTimer);\n  resizeTimer = setTimeout(sendResize, 200);\n}).observe(stage);\n\n// ---- coordinate mapping (canvas CSS px -> viewport px) ----\nfunction toViewport(e) {\n  const rect = canvas.getBoundingClientRect();\n  const sx = canvas.width / rect.width || 1;\n  const sy = canvas.height / rect.height || 1;\n  return { x: (e.clientX - rect.left) * sx, y: (e.clientY - rect.top) * sy };\n}\n\nfunction cdpButton(button) {\n  return button === 0 ? 'left' : button === 1 ? 'middle' : button === 2 ? 'right' : 'none';\n}\n\nfunction modMask(e) {\n  return (e.altKey ? 1 : 0) | (e.ctrlKey ? 2 : 0) | (e.metaKey ? 4 : 0) | (e.shiftKey ? 8 : 0);\n}\n\n// ---- mouse ----\ncanvas.addEventListener('mousemove', (e) => {\n  const p = toViewport(e);\n  send({ t: 'mouse', type: 'mouseMoved', x: p.x, y: p.y, button: e.buttons ? 'left' : 'none', modifiers: modMask(e) });\n});\ncanvas.addEventListener('mousedown', (e) => {\n  canvas.focus();\n  const p = toViewport(e);\n  send({ t: 'mouse', type: 'mousePressed', x: p.x, y: p.y, button: cdpButton(e.button), clickCount: e.detail || 1, modifiers: modMask(e) });\n});\ncanvas.addEventListener('mouseup', (e) => {\n  const p = toViewport(e);\n  send({ t: 'mouse', type: 'mouseReleased', x: p.x, y: p.y, button: cdpButton(e.button), clickCount: e.detail || 1, modifiers: modMask(e) });\n});\ncanvas.addEventListener('contextmenu', (e) => e.preventDefault());\ncanvas.addEventListener(\n  'wheel',\n  (e) => {\n    e.preventDefault();\n    const p = toViewport(e);\n    // Preserve the wheel direction when forwarding it to the remote browser.\n    send({ t: 'mouse', type: 'mouseWheel', x: p.x, y: p.y, deltaX: e.deltaX, deltaY: e.deltaY, modifiers: modMask(e) });\n  },\n  { passive: false },\n);\n\n// ---- keyboard (only when the canvas, not the address bar, is focused) ----\nconst printable = (key) => key.length === 1;\ncanvas.addEventListener('keydown', (e) => {\n  if (e.key === 'F5' || (e.ctrlKey && e.key.toLowerCase() === 'r')) return;\n  e.preventDefault();\n  send({\n    t: 'key',\n    type: 'keyDown',\n    key: e.key,\n    code: e.code,\n    keyCode: e.keyCode,\n    text: printable(e.key) && !e.ctrlKey && !e.metaKey ? e.key : '',\n    modifiers: modMask(e),\n  });\n});\ncanvas.addEventListener('keyup', (e) => {\n  e.preventDefault();\n  send({ t: 'key', type: 'keyUp', key: e.key, code: e.code, keyCode: e.keyCode, modifiers: modMask(e) });\n});\n\n// ---- toolbar ----\ndocument.getElementById('back').addEventListener('click', () => send({ t: 'nav', action: 'back' }));\ndocument.getElementById('forward').addEventListener('click', () => send({ t: 'nav', action: 'forward' }));\ndocument.getElementById('reload').addEventListener('click', () => send({ t: 'nav', action: 'reload' }));\ndocument.getElementById('logout').addEventListener('click', async () => {\n  if (portable) {\n    send({ t: 'logout' });\n    portable.signedOut();\n    ws?.close();\n    portable.prompt(connect, 'Signed out.');\n    return;\n  }\n  await fetch('/logout', { method: 'POST' });\n  location.href = '/login';\n});\n\naddress.addEventListener('focus', () => {\n  addressFocused = true;\n  address.select();\n});\naddress.addEventListener('blur', () => {\n  addressFocused = false;\n});\naddress.addEventListener('keydown', (e) => {\n  if (e.key === 'Enter') {\n    send({ t: 'nav', action: 'go', url: address.value });\n    canvas.focus();\n  }\n});\n\nconnect();\n\u003c/script>\n  \u003c/body>\n\u003c/html>\n";
+const CONFIG = { CACHE_KEY: 'shadow.portable.hub.v1', SETTINGS_KEY: 'shadow.portable.settings.v1', TIMEOUT_MS: 4500, RETRY_MS: 12000 };
+const $ = id => document.getElementById(id);
+function stored(key) { try { return JSON.parse(localStorage.getItem(key)); } catch { return null; } }
+function save(key, value) { try { localStorage.setItem(key, JSON.stringify(value)); } catch {} }
+if (SITE_URL) {
+  const link = document.createElement('a');
+  link.href = SITE_URL;
+  link.textContent = 'Fixed launcher link';
+  link.style.color = '#a5b4fc';
+  $('stable-link').append(link);
+  $('stable-link').hidden = false;
+}
+function normalizeServer(value) {
+  const url = new URL(value);
+  if (url.username || url.password) throw new Error('Do not put credentials in the server address.');
+  if (url.protocol !== 'https:' && !(url.protocol === 'http:' && ['localhost','127.0.0.1','[::1]'].includes(url.hostname))) throw new Error('Use HTTPS, or HTTP on localhost.');
+  if (url.pathname !== '/' || url.search || url.hash) throw new Error('Enter only the server origin, without a path or query.');
+  return url.origin;
+}
+let settings = { servers: DEFAULT_SERVERS, appearance: 'random' };
+try {
+  const saved = stored(CONFIG.SETTINGS_KEY);
+  if (saved && Array.isArray(saved.servers) && saved.servers.length) {
+    let servers = saved.servers.map(normalizeServer);
+    // The Windows launcher can regenerate this file with a new tunnel URL.
+    // Replace its former defaults, retaining any explicitly added mirrors.
+    if (JSON.stringify(saved.defaults) !== JSON.stringify(DEFAULT_SERVERS)) {
+      const previousDefaults = Array.isArray(saved.defaults) ? saved.defaults : servers;
+      servers = [...new Set([...DEFAULT_SERVERS, ...servers.filter(origin => !previousDefaults.includes(origin))])];
+    }
+    settings = { servers, appearance: saved.appearance || 'random' };
+  }
+} catch {}
+const appearances = {
+  shadow: ['ShadowBrowser', 'data:,'],
+  docs: ['Google Docs', 'https://ssl.gstatic.com/docs/documents/images/kix-favicon-2023q4.ico'],
+  classroom: ['Google Classroom', 'https://www.gstatic.com/classroom/favicon.png'],
+  drive: ['Google Drive', 'https://ssl.gstatic.com/images/branding/product/1x/drive_2020q4_32dp.png']
+};
+const randomAppearance = ['docs','classroom','drive'][Math.floor(Math.random() * 3)];
+function applyAppearance() {
+  const entry = appearances[settings.appearance === 'random' ? randomAppearance : settings.appearance] || appearances.shadow;
+  document.title = entry[0];
+  if ($('tab-icon').getAttribute('href') !== entry[1]) $('tab-icon').setAttribute('href', entry[1]);
+}
+applyAppearance();
+setInterval(applyAppearance, 1000);
+function validHub(html) {
+  if (typeof html !== 'string' || html.length < 200 || html.length > 2000000) return false;
+  const doc = new DOMParser().parseFromString(html, 'text/html');
+  return !!doc.querySelector('meta[name="shadow-portable"][content="1"]') && !!doc.getElementById('screen');
+}
+let hubPromise = null;
+async function discoverServers() {
+  if (!CONFIG_URLS.length) return;
+  const cacheKey = 'shadow.portable.discovery.v1:' + CONFIG_URLS[0];
+  function validate(data) {
+    if (data?.service !== 'shadow-browser' || data.version !== 1 || !Array.isArray(data.servers) || data.servers.length < 1 || data.servers.length > 8) throw new Error('Invalid connection file');
+    return data.servers.map(value => {
+      const origin = normalizeServer(value);
+      if (!origin.startsWith('https://')) throw new Error('Published servers must use HTTPS');
+      return origin;
+    });
+  }
+  let discovered;
+  for (const source of CONFIG_URLS) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), CONFIG.TIMEOUT_MS);
+    try {
+      const url = new URL(source);
+      url.searchParams.set('_', String(Date.now()));
+      const response = await fetch(url, {cache:'no-store',credentials:'omit',headers:{Accept:'application/vnd.github.raw+json'},signal:controller.signal});
+      if (!response.ok) throw new Error('Connection lookup failed');
+      const data = await response.json();
+      discovered = validate(data);
+      save(cacheKey, data);
+      break;
+    } catch {} finally { clearTimeout(timer); }
+  }
+  if (!discovered) { try { discovered = validate(stored(cacheKey)); } catch {} }
+  if (discovered) settings.servers = [...new Set([...discovered,...settings.servers])];
+}
+function getHub() {
+  if (!hubPromise) hubPromise = (async () => {
+    await discoverServers();
+    const failures = [];
+    for (const origin of settings.servers) {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), CONFIG.TIMEOUT_MS);
+      try {
+        const response = await fetch(origin + '/portable-hub', { cache:'no-store', credentials:'omit', signal:controller.signal, redirect:'error' });
+        if (!response.ok) throw new Error('HTTP ' + response.status);
+        const html = await response.text();
+        if (!validHub(html)) throw new Error('The response is not a ShadowBrowser interface');
+        const result = { html, origin, savedAt:Date.now() };
+        save(CONFIG.CACHE_KEY, result);
+        return result;
+      } catch (error) { failures.push(origin + ': ' + error.message); }
+      finally { clearTimeout(timeout); }
+    }
+    const cached = stored(CONFIG.CACHE_KEY);
+    if (cached && settings.servers.includes(cached.origin) && validHub(cached.html)) return { ...cached, fallback:'Saved interface loaded. The server must still be reachable for browsing.' };
+    if (validHub(BUILTIN_HUB)) return { html:BUILTIN_HUB, origin:settings.servers[0], fallback:'Bundled interface loaded. If login fails, check the tunnel address and restart the updated server.' };
+    throw new Error(failures.join('\n'));
+  })().catch(error => { hubPromise = null; throw error; });
+  return hubPromise;
+}
+function install(html, origin) {
+  const doc = new DOMParser().parseFromString(html, 'text/html');
+  doc.querySelectorAll('base').forEach(base => base.remove());
+  const base = doc.createElement('base');
+  base.href = origin + '/';
+  doc.head.prepend(base);
+  const config = doc.createElement('script');
+  config.textContent = 'window.SHADOW_SERVER=' + JSON.stringify(origin) + ';';
+  doc.head.append(config);
+  const target = $('frame').contentDocument;
+  target.open();
+  target.write('<!doctype html>' + doc.documentElement.outerHTML);
+  target.close();
+}
+let busy = false, retryTimer = null;
+async function boot() {
+  if (busy) return;
+  clearTimeout(retryTimer);
+  busy = true;
+  $('loader').hidden = false;
+  $('error').hidden = true;
+  try {
+    const hub = await getHub();
+    install(hub.html, hub.origin);
+    $('frame').hidden = false;
+    $('loader').hidden = true;
+    if (hub.fallback) { $('notice').querySelector('span').textContent = hub.fallback; $('notice').hidden = false; }
+  } catch (error) {
+    $('loader').hidden = true;
+    $('detail').textContent = error.message;
+    $('error').hidden = false;
+    retryTimer = setTimeout(boot, CONFIG.RETRY_MS);
+  } finally { busy = false; }
+}
+$('retry').onclick = boot;
+$('dismiss').onclick = () => $('notice').hidden = true;
+$('settings-button').onclick = () => {
+  $('servers').value = settings.servers.join('\n');
+  $('appearance').value = settings.appearance;
+  $('settings').hidden = false;
+};
+$('cancel').onclick = () => $('settings').hidden = true;
+$('settings-form').onsubmit = event => {
+  event.preventDefault();
+  try {
+    if (busy) throw new Error('Loading is in progress. Try Save again in a moment.');
+    const servers = [...new Set($('servers').value.split(/\r?\n/).map(value => value.trim()).filter(Boolean).map(normalizeServer))];
+    if (!servers.length || servers.length > 8) throw new Error('Enter between one and eight server addresses.');
+    settings = { servers, appearance:$('appearance').value };
+    save(CONFIG.SETTINGS_KEY, { ...settings, defaults: DEFAULT_SERVERS });
+    $('settings').hidden = true;
+    $('settings-error').textContent = '';
+    // Replacing the iframe destroys the old session without racing a pending
+    // about:blank navigation against document.write in the next installation.
+    $('frame').replaceWith($('frame').cloneNode(false));
+    $('frame').hidden = true;
+    $('notice').hidden = true;
+    hubPromise = null;
+    applyAppearance();
+    boot();
+  } catch (error) { $('settings-error').textContent = error.message; }
+};
+boot();
+</script>
+</body>
+</html>
