@@ -20,6 +20,7 @@
   </style>
 </head>
 <body>
+  <div id="launch-screen" class="center" hidden><h1>SHADOWBROWSER</h1><p id="launch-status" role="status">Opening ShadowBrowser in an about:blank tab…</p><button id="open-browser">Open ShadowBrowser</button><p>The displayed address does not hide network activity.</p></div>
   <div id="loader" class="center"><h1>SHADOWBROWSER</h1><div class="bar"><i></i></div><p>Loading your browser interface…</p></div>
   <div id="error" class="center" hidden><h1>Could not load the interface</h1><p>Your PC and tunnel must be running. Check the server address in Launcher settings.</p><pre id="detail"></pre><button id="retry">Retry now</button></div>
   <iframe id="frame" title="ShadowBrowser" referrerpolicy="no-referrer" allow="fullscreen; autoplay; clipboard-read; clipboard-write" hidden></iframe>
@@ -40,6 +41,9 @@
     </form>
   </div>
 <script>
+// Capture the unmodified launcher, before the viewer or settings alter its DOM.
+const LAUNCHER_HTML = '<!doctype html>' + document.documentElement.outerHTML;
+const BLANK_HOST = document.documentElement.dataset.shadowBlank === '1';
 const DEFAULT_SERVERS = ["https://stainless-britannica-matter-sports.trycloudflare.com"];
 const CONFIG_URLS = ["https://raw.githubusercontent.com/finniverson-oss/shadow-browser/connection/runtime.json","https://api.github.com/repos/finniverson-oss/shadow-browser/contents/runtime.json?ref=connection"];
 const SITE_URL = "https://finniverson-oss.github.io/shadow-browser/";
@@ -88,6 +92,14 @@ function applyAppearance() {
   const entry = appearances[settings.appearance === 'random' ? randomAppearance : settings.appearance] || appearances.shadow;
   document.title = entry[0];
   if ($('tab-icon').getAttribute('href') !== entry[1]) $('tab-icon').setAttribute('href', entry[1]);
+  if (BLANK_HOST) {
+    try {
+      parent.document.title = entry[0];
+      let icon = parent.document.querySelector('link[rel="icon"]');
+      if (!icon) { icon = parent.document.createElement('link'); icon.rel = 'icon'; parent.document.head.append(icon); }
+      if (icon.getAttribute('href') !== entry[1]) icon.setAttribute('href', entry[1]);
+    } catch {}
+  }
 }
 applyAppearance();
 setInterval(applyAppearance, 1000);
@@ -213,7 +225,46 @@ $('settings-form').onsubmit = event => {
     boot();
   } catch (error) { $('settings-error').textContent = error.message; }
 };
-boot();
+let browserTab = null;
+function openBlankBrowser() {
+  try {
+    if (browserTab && !browserTab.closed) { browserTab.focus(); return; }
+    browserTab = window.open('about:blank', '_blank');
+    if (!browserTab) {
+      $('launch-status').textContent = 'Your browser blocked the automatic tab. Click Open ShadowBrowser, or allow pop-ups for this launcher to open it automatically next time.';
+      return;
+    }
+    // Keep the outer document at about:blank; srcdoc runs the self-contained
+    // launcher with the inherited origin needed for storage and connection lookup.
+    const doc = browserTab.document;
+    doc.title = 'ShadowBrowser';
+    doc.documentElement.style.cssText = 'height:100%;background:#09090b';
+    doc.body.style.cssText = 'margin:0;height:100%;overflow:hidden';
+    const viewer = doc.createElement('iframe');
+    viewer.title = 'ShadowBrowser launcher';
+    viewer.style.cssText = 'width:100%;height:100%;border:0;display:block';
+    viewer.allow = 'fullscreen; autoplay; clipboard-read; clipboard-write';
+    viewer.referrerPolicy = 'no-referrer';
+    viewer.srcdoc = LAUNCHER_HTML.replace('<html ', '<html data-shadow-blank="1" ');
+    doc.body.append(viewer);
+    browserTab.opener = null;
+    $('launch-status').textContent = 'ShadowBrowser opened in an about:blank tab. You can close this launcher tab.';
+    $('open-browser').textContent = 'Return to ShadowBrowser';
+  } catch {
+    if (browserTab && !browserTab.closed) browserTab.close();
+    browserTab = null;
+    $('launch-status').textContent = 'The browser could not open the tab. Allow pop-ups for this launcher and try again.';
+  }
+}
+if (BLANK_HOST) {
+  boot();
+} else {
+  $('loader').hidden = true;
+  $('settings-button').hidden = true;
+  $('launch-screen').hidden = false;
+  $('open-browser').onclick = openBlankBrowser;
+  openBlankBrowser();
+}
 </script>
 </body>
 </html>
